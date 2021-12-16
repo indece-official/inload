@@ -116,6 +116,31 @@ func (l *LoadTestStepHttp) Validate() error {
 	return nil
 }
 
+func (l *LoadTestStepHttp) assignResponseObject(resp *http.Response, vm *otto.Otto) error {
+	mutexVm.Lock()
+	defer mutexVm.Unlock()
+
+	vmObject, err := vm.Object(`response = {}`)
+	if err != nil {
+		return fmt.Errorf("error creating response object: %s", err)
+	}
+
+	vmObject.Set("status", resp.Status)
+	vmObject.Set("statuscode", resp.StatusCode)
+	vmHeaderObject, err := vm.Object(`response.header = {}`)
+	if err != nil {
+		return fmt.Errorf("error creating response header object: %s", err)
+	}
+
+	for name, values := range resp.Header {
+		if len(values) > 0 {
+			vmHeaderObject.Set(name, values[0])
+		}
+	}
+
+	return nil
+}
+
 func (l *LoadTestStepHttp) Execute(path []string, vm *otto.Otto, runStats *stats.RunStats, report *report.Report) (*StepExecutionStats, error) {
 	var url string
 
@@ -223,12 +248,6 @@ func (l *LoadTestStepHttp) Execute(path []string, vm *otto.Otto, runStats *stats
 
 	startResp := time.Now()
 
-	// Read the response body
-	/*_, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return stepStats, fmt.Errorf("can't read response body of http request: %s", err)
-	}*/
-
 	stepStats.Code.Scan(fmt.Sprintf("%d", resp.StatusCode))
 
 	dumpResponse, err := httputil.DumpResponse(resp, true)
@@ -241,20 +260,9 @@ func (l *LoadTestStepHttp) Execute(path []string, vm *otto.Otto, runStats *stats
 	durationResp := time.Since(startResp)
 	stepStats.DurationResponse = &durationResp
 
-	vmObject, err := vm.Object(`response = {}`)
+	err = l.assignResponseObject(resp, vm)
 	if err != nil {
-		return stepStats, fmt.Errorf("can't create vm response object: %s", err)
-	}
-	vmObject.Set("status", resp.Status)
-	vmObject.Set("statuscode", resp.StatusCode)
-	vmHeaderObject, err := vm.Object(`response.header = {}`)
-	if err != nil {
-		return stepStats, fmt.Errorf("can't create vm response header object: %s", err)
-	}
-	for name, values := range resp.Header {
-		if len(values) > 0 {
-			vmHeaderObject.Set(name, values[0])
-		}
+		return stepStats, fmt.Errorf("can't assign reponse object to vm")
 	}
 
 	for _, assertion := range l.Assertions {

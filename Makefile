@@ -9,7 +9,6 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 DIR_SOURCE=./src
 DIR_DIST=./dist
-DIR_GENERATED_MODEL=$(DIR_SOURCE)/generated/model
 BINARY_NAME=$(DIR_DIST)/bin/$(PROJECT_NAME)
 BUILD_DATE=$(shell date +%Y%m%d.%H%M%S)
 BUILD_VERSION=$(shell git rev-parse --short HEAD)
@@ -18,7 +17,10 @@ LDFLAGS := $(LDFLAGS) -X main.ProjectName=$(PROJECT_NAME)
 LDFLAGS := $(LDFLAGS) -X main.BuildDate=$(BUILD_DATE)
 LDFLAGS := $(LDFLAGS) -X main.BuildVersion=$(BUILD_VERSION)
 
-all: test compile_linux crosscompile_windows
+all: generate test compile_linux crosscompile_windows
+
+generate:
+	$(GOGENERATE) -tags=bindata ./...
 
 compile_linux:
 	mkdir -p $(DIR_DIST)/bin

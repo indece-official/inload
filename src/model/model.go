@@ -21,48 +21,6 @@ type StepExecutionStats struct {
 	BytesReceived    null.Int
 }
 
-type ExecutableStringOrNull struct {
-	Valid  bool
-	String string
-}
-
-func (e *ExecutableStringOrNull) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	str := ""
-	err := unmarshal(&str)
-	if err != nil {
-		return err
-	}
-
-	// make sure to dereference before assignment,
-	// otherwise only the local variable will be overwritten
-	// and not the value the pointer actually points to
-	*e = ExecutableStringOrNull{}
-	if str == "" {
-		e.Valid = false
-		e.String = ""
-
-		return nil
-	}
-
-	e.String = str
-	e.Valid = true
-
-	return nil
-}
-
-func (e *ExecutableStringOrNull) Execute(vm *otto.Otto) (otto.Value, error) {
-	if !e.Valid {
-		return otto.NullValue(), nil
-	}
-
-	val, err := vm.Run(e.String)
-	if err != nil {
-		return otto.NullValue(), fmt.Errorf("can't execute script: %s", err)
-	}
-
-	return val, nil
-}
-
 type IRunnable interface {
 	Validate() error
 	Execute(path []string, vm *otto.Otto, runStats *stats.RunStats, report *report.Report) error
@@ -72,43 +30,6 @@ type IRunnableStep interface {
 	Validate() error
 	Execute(path []string, vm *otto.Otto, runStats *stats.RunStats, report *report.Report) (*StepExecutionStats, error)
 }
-
-type ConfigVersion string
-
-const ConfigVersionV1 ConfigVersion = "v1"
-
-type Config struct {
-	Version ConfigVersion `yaml:"version"`
-	Tests   []*LoadTest   `yaml:"tests"`
-}
-
-func (l *Config) Validate() error {
-	if l.Version != ConfigVersionV1 {
-		return fmt.Errorf("unsupported config version")
-	}
-
-	for _, test := range l.Tests {
-		err := test.Validate()
-		if err != nil {
-			return fmt.Errorf("error in load test '%s': %s", test.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (l *Config) Execute(path []string, vm *otto.Otto, runStats *stats.RunStats, report *report.Report) error {
-	for _, test := range l.Tests {
-		err := test.Execute(path, vm, runStats, report)
-		if err != nil {
-			return fmt.Errorf("load test %s failed: %s", test.Name, err)
-		}
-	}
-
-	return nil
-}
-
-var _ IRunnable = (*Config)(nil)
 
 type LoadTest struct {
 	Name     string                 `yaml:"name"`

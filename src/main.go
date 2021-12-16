@@ -1,3 +1,4 @@
+//go:generate go run assets/generate.go
 package main
 
 import (
@@ -23,6 +24,7 @@ var (
 
 var flagVerbose = flag.Bool("v", false, "Verbose")
 var flagFile = flag.String("f", "", "Filename of test yaml")
+var flagReport = flag.String("r", "", "Filename of output report")
 
 func loadConfig() (*model.Config, error) {
 	if *flagFile == "" {
@@ -56,6 +58,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config: %s", err)
 
+		flag.PrintDefaults()
+
 		os.Exit(1)
 
 		return
@@ -76,6 +80,8 @@ func main() {
 
 	log.Infof("Starting tests")
 
+	runStats.SetStart()
+
 	err = config.Execute([]string{}, vm, runStats, report)
 	if err != nil {
 		log.Fatalf("Error running tests: %s", err)
@@ -85,8 +91,36 @@ func main() {
 		return
 	}
 
+	runStats.SetEnd()
+
 	log.Infof("Successfully finished tests")
+
+	runStats.Aggregate()
 
 	log.Infof("")
 	runStats.Print()
+
+	if *flagReport != "" {
+		log.Infof("Writing report to %s ...", *flagReport)
+
+		data, err := report.Generate(runStats)
+		if err != nil {
+			log.Fatalf("Error generating report: %s", err)
+
+			os.Exit(1)
+
+			return
+		}
+
+		err = ioutil.WriteFile(*flagReport, data, 0660)
+		if err != nil {
+			log.Fatalf("Error writing report: %s", err)
+
+			os.Exit(1)
+
+			return
+		}
+
+		log.Infof("Successfully generated report")
+	}
 }

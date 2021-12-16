@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Loadtest-Report</title>
+
+        <style type="text/css">
+            body {
+                font-family: Arial, Helvetica, sans-serif;
+                color: #333;
+                font-size: 16px;
+            }
+
+            .header {
+                border: 1px solid #ddd;
+                background: linear-gradient(to bottom, rgba(207,231,250,1) 0%,rgba(99,147,193,1) 100%); 
+                padding: 10px 20px;
+                text-align: center;
+                border-radius: 5px;
+                font-size: 26px;
+            }
+
+            .info,
+            .stats,
+            .steps {
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                padding: 10px 20px;
+                margin-top: 20px;
+            }
+
+            .info .title,
+            .stats .title,
+            .steps .title {
+                font-size: 20px;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+
+            .steps tr:not(:last-of-type) .td {
+                border-bottom: 1px solid #ccc;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="header">
+            <h1>Loadtest-Report</h1>
+        </div>
+
+        <div class="info">
+            <div class="title">Info</div>
+
+            <table>
+                <tr>
+                    <td>Timestamp:</td>
+                    <td>{{.Datetime}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="stats">
+            <div class="title">Stats</div>
+
+            <table>
+                <tr>
+                    <td>Total duration:</td>
+                    <td>{{.DurationTotal}}</td>
+                </tr>
+                <tr>
+                    <td>Total steps:</td>
+                    <td>{{.CountStepsTotal}}</td>
+                </tr>
+                <tr>
+                    <td>Steps skipped:</td>
+                    <td>{{.CountStepsSkipped}}</td>
+                </tr>
+                <tr>
+                    <td>Steps failed:</td>
+                    <td>{{.CountStepsFailed}}</td>
+                </tr>
+                <tr>
+                    <td>Steps succeded:</td>
+                    <td>{{.CountStepsSucceded}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="steps">
+            <table>
+                <tr>
+                    <th>Step</th>
+                    <th>Count</th>
+                    <th>Skipped</th>
+                    <th>Success</th>
+                    <th>Failed</th>
+                    <th>Min duration</th>
+                    <th>Avg duration</th>
+                    <th>Max duration</th>
+                    <th>Min bytes sent</th>
+                    <th>Avg bytes sent</th>
+                    <th>Max bytes sent</th>
+                    <th>Min bytes recv</th>
+                    <th>Avg bytes recv</th>
+                    <th>Max bytes recv</th>
+                </tr>
+
+                {{range .Steps}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td>{{.CountTotal}}</td>
+                        <td>{{.CountSkipped}}</td>
+                        <td>{{.CountSucceded}}</td>
+                        <td>{{.CountFailed}}</td>
+                        <td>{{.DurationMin}}</td>
+                        <td>{{.DurationAvg}}</td>
+                        <td>{{.DurationMax}}</td>
+                        <td>{{if .BytesSentMin.Valid}} {{.BytesSentMin.Int64}} b{{else}} - {{end}}</td>
+                        <td>{{if .BytesSentAvg.Valid}} {{.BytesSentAvg.Float64}} b{{else}} - {{end}}</td>
+                        <td>{{if .BytesSentMax.Valid}} {{.BytesSentMax.Int64}} b{{else}} - {{end}}</td>
+                        <td>{{if .BytesReceivedMin.Valid}} {{.BytesReceivedMin.Int64}} b{{else}} - {{end}}</td>
+                        <td>{{if .BytesReceivedAvg.Valid}} {{.BytesReceivedAvg.Float64}} b{{else}} - {{end}}</td>
+                        <td>{{if .BytesReceivedMax.Valid}} {{.BytesReceivedMax.Int64}} b{{else}} - {{end}}</td>
+                    </tr>
+                {{end}}
+            </table>
+        </div>
+    </body>
+</html>

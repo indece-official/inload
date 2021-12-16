@@ -32,9 +32,45 @@ type StepExecution struct {
 	BytesReceived    null.Int
 }
 
+type RunStatStep struct {
+	HasExplicitName  bool
+	IsGroup          bool
+	CountTotal       int64
+	CountSkipped     int64
+	CountSucceded    int64
+	CountFailed      int64
+	Errors           []error
+	DurationAvg      time.Duration
+	DurationMin      time.Duration
+	DurationMax      time.Duration
+	BytesSentAvg     null.Float
+	BytesSentMin     null.Int
+	BytesSentMax     null.Int
+	BytesReceivedAvg null.Float
+	BytesReceivedMin null.Int
+	BytesReceivedMax null.Int
+	Codes            map[string]int
+}
+
 type RunStats struct {
+	startTime           time.Time
 	mutexStepExecutions sync.Mutex
 	stepExecutions      []*StepExecution
+
+	TotalDuration      time.Duration
+	CountStepsTotal    int64
+	CountStepsSkipped  int64
+	CountStepsSucceded int64
+	CountStepsFailed   int64
+	Steps              map[string]*RunStatStep
+}
+
+func (r *RunStats) SetStart() {
+	r.startTime = time.Now()
+}
+
+func (r *RunStats) SetEnd() {
+	r.TotalDuration = time.Since(r.startTime)
 }
 
 func (r *RunStats) AddStepExecution(stepExecution *StepExecution) {
@@ -44,140 +80,145 @@ func (r *RunStats) AddStepExecution(stepExecution *StepExecution) {
 	r.stepExecutions = append(r.stepExecutions, stepExecution)
 }
 
-func (r *RunStats) Print() {
-	namedStepsMap := map[string]bool{}
-	stepDurationTotalMap := map[string][]time.Duration{}
-	stepBytesSentMap := map[string][]int64{}
-	stepBytesReceivedMap := map[string][]int64{}
-	stepCountTotalMap := map[string]int{}
-	stepCountSkippedMap := map[string]int{}
-	stepCountSuccessMap := map[string]int{}
-	stepCountFailedMap := map[string]int{}
-	codeCountMap := map[string]map[string]int{}
-	countStepsTotal := 0
-	countStepsSkipped := 0
-	countStepsSuccess := 0
-	countStepsFailed := 0
+func (r *RunStats) Aggregate() {
+	r.CountStepsTotal = 0
+	r.CountStepsSkipped = 0
+	r.CountStepsSucceded = 0
+	r.CountStepsFailed = 0
+	r.Steps = map[string]*RunStatStep{}
+
+	durationMinMap := map[string]time.Duration{}
+	durationMaxMap := map[string]time.Duration{}
+	durationSumMap := map[string]time.Duration{}
+	durationCountMap := map[string]int{}
+
+	bytesSentMinMap := map[string]int64{}
+	bytesSentMaxMap := map[string]int64{}
+	bytesSentSumMap := map[string]int64{}
+	bytesSentCountMap := map[string]int{}
+
+	bytesReceivedMinMap := map[string]int64{}
+	bytesReceivedMaxMap := map[string]int64{}
+	bytesReceivedSumMap := map[string]int64{}
+	bytesReceivedCountMap := map[string]int{}
 
 	for _, stepExecution := range r.stepExecutions {
-		if !stepExecution.IsGroup && stepExecution.HasExplicitName {
-			namedStepsMap[stepExecution.Name] = true
+		if _, ok := r.Steps[stepExecution.Name]; !ok {
+			r.Steps[stepExecution.Name] = &RunStatStep{}
+			r.Steps[stepExecution.Name].IsGroup = stepExecution.IsGroup
+			r.Steps[stepExecution.Name].HasExplicitName = stepExecution.HasExplicitName
+			r.Steps[stepExecution.Name].Codes = map[string]int{}
 		}
 
-		if _, ok := codeCountMap[stepExecution.Name]; !ok {
-			codeCountMap[stepExecution.Name] = map[string]int{}
-		}
-
-		stepDurationTotalMap[stepExecution.Name] = append(stepDurationTotalMap[stepExecution.Name], stepExecution.DurationTotal)
-
-		if stepExecution.BytesSent.Valid {
-			stepBytesSentMap[stepExecution.Name] = append(stepBytesSentMap[stepExecution.Name], stepExecution.BytesSent.Int64)
-		}
-
-		if stepExecution.BytesReceived.Valid {
-			stepBytesReceivedMap[stepExecution.Name] = append(stepBytesReceivedMap[stepExecution.Name], stepExecution.BytesReceived.Int64)
-		}
-
-		stepCountTotalMap[stepExecution.Name]++
-
-		countStepsTotal++
+		r.CountStepsTotal++
+		r.Steps[stepExecution.Name].CountTotal++
 
 		switch stepExecution.Status {
 		case StepExecutionStatusSuccess:
-			stepCountSuccessMap[stepExecution.Name]++
-			countStepsSuccess++
+			r.CountStepsSucceded++
+			r.Steps[stepExecution.Name].CountSucceded++
 		case StepExecutionStatusSkipped:
-			stepCountSkippedMap[stepExecution.Name]++
-			countStepsSkipped++
+			r.CountStepsSkipped++
+			r.Steps[stepExecution.Name].CountSkipped++
 		case StepExecutionStatusFailed:
-			stepCountFailedMap[stepExecution.Name]++
-			countStepsFailed++
+			r.CountStepsFailed++
+			r.Steps[stepExecution.Name].CountFailed++
+		}
+
+		if stepExecution.Error != nil {
+			r.Steps[stepExecution.Name].Errors = append(r.Steps[stepExecution.Name].Errors, stepExecution.Error)
+		}
+
+		if durationCountMap[stepExecution.Name] == 0 {
+			durationMinMap[stepExecution.Name] = stepExecution.DurationTotal
+		} else {
+			durationMinMap[stepExecution.Name] = utils.MinDuration(durationMinMap[stepExecution.Name], stepExecution.DurationTotal)
+		}
+		durationMaxMap[stepExecution.Name] = utils.MaxDuration(durationMaxMap[stepExecution.Name], stepExecution.DurationTotal)
+		durationSumMap[stepExecution.Name] += stepExecution.DurationTotal
+		durationCountMap[stepExecution.Name]++
+
+		if stepExecution.BytesSent.Valid {
+			if bytesSentCountMap[stepExecution.Name] == 0 {
+				bytesSentMinMap[stepExecution.Name] = stepExecution.BytesSent.Int64
+			} else {
+				bytesSentMinMap[stepExecution.Name] = utils.MinInt64(bytesSentMaxMap[stepExecution.Name], stepExecution.BytesSent.Int64)
+			}
+			bytesSentMaxMap[stepExecution.Name] = utils.MaxInt64(bytesSentMaxMap[stepExecution.Name], stepExecution.BytesSent.Int64)
+			bytesSentSumMap[stepExecution.Name] += stepExecution.BytesSent.Int64
+			bytesSentCountMap[stepExecution.Name]++
+		}
+
+		if stepExecution.BytesReceived.Valid {
+			if bytesReceivedCountMap[stepExecution.Name] == 0 {
+				bytesReceivedMinMap[stepExecution.Name] = stepExecution.BytesReceived.Int64
+			} else {
+				bytesReceivedMinMap[stepExecution.Name] = utils.MinInt64(bytesReceivedMaxMap[stepExecution.Name], stepExecution.BytesReceived.Int64)
+			}
+			bytesReceivedMaxMap[stepExecution.Name] = utils.MaxInt64(bytesReceivedMaxMap[stepExecution.Name], stepExecution.BytesReceived.Int64)
+			bytesReceivedSumMap[stepExecution.Name] += stepExecution.BytesReceived.Int64
+			bytesReceivedCountMap[stepExecution.Name]++
 		}
 
 		if stepExecution.Code.Valid {
-			codeCountMap[stepExecution.Name][stepExecution.Code.String]++
+			r.Steps[stepExecution.Name].Codes[stepExecution.Code.String]++
 		}
 	}
 
+	for name := range bytesSentCountMap {
+		r.Steps[name].BytesSentMin.Scan(bytesSentMinMap[name])
+		r.Steps[name].BytesSentMax.Scan(bytesSentMaxMap[name])
+		r.Steps[name].BytesSentAvg.Scan(float64(bytesSentSumMap[name]) / float64(bytesSentCountMap[name]))
+	}
+
+	for name := range bytesReceivedCountMap {
+		r.Steps[name].BytesReceivedMin.Scan(bytesReceivedMinMap[name])
+		r.Steps[name].BytesReceivedMax.Scan(bytesReceivedMaxMap[name])
+		r.Steps[name].BytesReceivedAvg.Scan(float64(bytesReceivedSumMap[name]) / float64(bytesReceivedCountMap[name]))
+	}
+
+	for name := range durationCountMap {
+		r.Steps[name].DurationMin = durationMinMap[name]
+		r.Steps[name].DurationMax = durationMaxMap[name]
+		r.Steps[name].DurationAvg = time.Duration(math.Round(float64(durationSumMap[name]) / float64(durationCountMap[name])))
+	}
+}
+
+func (r *RunStats) Print() {
 	log.Infof("######################## Run stats ########################")
-	log.Infof("Steps total:   %d", countStepsTotal)
-	log.Infof("Steps skipped: %d", countStepsSkipped)
-	log.Infof("Steps success: %d", countStepsSuccess)
-	log.Infof("Steps failed:  %d", countStepsFailed)
+	log.Infof("Steps total:    %d", r.CountStepsTotal)
+	log.Infof("Steps skipped:  %d", r.CountStepsSkipped)
+	log.Infof("Steps succeded: %d", r.CountStepsSucceded)
+	log.Infof("Steps failed:   %d", r.CountStepsFailed)
 
-	for name := range namedStepsMap {
-		durationTotalMax := time.Duration(0)
-		durationTotalSum := time.Duration(0)
-		durationTotalMin := time.Duration(0)
-		for i, durationTotal := range stepDurationTotalMap[name] {
-			durationTotalSum += durationTotal
-			durationTotalMax = utils.MaxDuration(durationTotalMax, durationTotal)
-			if i == 0 {
-				durationTotalMin = durationTotal
-			} else {
-				durationTotalMin = utils.MinDuration(durationTotalMin, durationTotal)
-			}
+	for name, step := range r.Steps {
+		if step.IsGroup || !step.HasExplicitName {
+			continue
 		}
-
-		durationTotalAvg := float64(durationTotalSum.Milliseconds()) / math.Max(float64(len(stepDurationTotalMap[name])), 1)
-
-		bytesSentMax := int64(0)
-		bytesSentSum := int64(0)
-		bytesSentMin := int64(0)
-		bytesSentCount := 0
-		for _, bytesSent := range stepBytesSentMap[name] {
-			bytesSentSum += bytesSent
-			bytesSentMax = utils.MaxInt64(bytesSentMax, bytesSent)
-			if bytesSentCount == 0 {
-				bytesSentMin = bytesSent
-			} else {
-				bytesSentMin = utils.MinInt64(bytesSentMin, bytesSent)
-			}
-			bytesSentCount++
-		}
-
-		bytesSentAvg := float64(bytesSentSum) / math.Max(float64(bytesSentCount), 1)
-
-		bytesReceivedMax := int64(0)
-		bytesReceivedSum := int64(0)
-		bytesReceivedMin := int64(0)
-		bytesReceivedCount := 0
-		for _, bytesReceived := range stepBytesReceivedMap[name] {
-			bytesReceivedSum += bytesReceived
-			bytesReceivedMax = utils.MaxInt64(bytesReceivedMax, bytesReceived)
-			if bytesReceivedCount == 0 {
-				bytesReceivedMin = bytesReceived
-			} else {
-				bytesReceivedMin = utils.MinInt64(bytesReceivedMin, bytesReceived)
-			}
-			bytesReceivedCount++
-		}
-
-		bytesReceivedAvg := float64(bytesReceivedSum) / math.Max(float64(bytesReceivedCount), 1)
 
 		log.Infof("")
 		log.Infof("Step %s:", name)
-		log.Infof("   Count total:     %d", stepCountTotalMap[name])
-		log.Infof("   Count skipped:   %d", stepCountSkippedMap[name])
-		log.Infof("   Count success:   %d", stepCountSuccessMap[name])
-		log.Infof("   Count failed:    %d", stepCountFailedMap[name])
-		log.Infof("   Avg duration:  %.0f ms", durationTotalAvg)
-		log.Infof("   Max duration:  %d ms", durationTotalMax.Milliseconds())
-		log.Infof("   Min duration:  %d ms", durationTotalMin.Milliseconds())
+		log.Infof("   Count total:     %d", step.CountTotal)
+		log.Infof("   Count skipped:   %d", step.CountSkipped)
+		log.Infof("   Count success:   %d", step.CountSucceded)
+		log.Infof("   Count failed:    %d", step.CountFailed)
+		log.Infof("   Avg duration:  %d ms", step.DurationAvg.Milliseconds())
+		log.Infof("   Max duration:  %d ms", step.DurationMax.Milliseconds())
+		log.Infof("   Min duration:  %d ms", step.DurationMin.Milliseconds())
 
-		if bytesSentCount > 0 {
-			log.Infof("   Avg bytes sent:  %.0f b", bytesSentAvg)
-			log.Infof("   Max bytes sent:  %d b", bytesSentMax)
-			log.Infof("   Min bytes sent:  %d b", bytesSentMin)
+		if step.BytesSentAvg.Valid {
+			log.Infof("   Avg bytes sent:  %.0f b", step.BytesSentAvg.Float64)
+			log.Infof("   Max bytes sent:  %d b", step.BytesSentMax.Int64)
+			log.Infof("   Min bytes sent:  %d b", step.BytesSentMin.Int64)
 		}
 
-		if bytesReceivedCount > 0 {
-			log.Infof("   Avg bytes received:  %.0f b", bytesReceivedAvg)
-			log.Infof("   Max bytes received:  %d b", bytesReceivedMax)
-			log.Infof("   Min bytes received:  %d b", bytesReceivedMin)
+		if step.BytesReceivedAvg.Valid {
+			log.Infof("   Avg bytes received:  %.0f b", step.BytesReceivedAvg.Float64)
+			log.Infof("   Max bytes received:  %d b", step.BytesReceivedMax.Int64)
+			log.Infof("   Min bytes received:  %d b", step.BytesReceivedMin.Int64)
 		}
 
-		for code, count := range codeCountMap[name] {
+		for code, count := range step.Codes {
 			log.Infof("   Code %s:        %d", code, count)
 		}
 	}
