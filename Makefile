@@ -1,5 +1,5 @@
 # Go parameters
-PROJECT_NAME=loadtest
+PROJECT_NAME=inload
 GOCMD=go
 GOPATH=$(shell $(GOCMD) env GOPATH))
 GOBUILD=$(GOCMD) build
@@ -37,7 +37,6 @@ crosscompile_windows:
 	GOOS=windows \
 	GOARCH=amd64 \
 	$(GOBUILD) -o $(BINARY_NAME)_win64-unsigned.exe -v $(DIR_SOURCE)/main.go
-
 
 test:
 	mkdir -p $(DIR_DIST)

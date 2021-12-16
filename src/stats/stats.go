@@ -21,6 +21,8 @@ const (
 type StepExecution struct {
 	Name             string
 	HasExplicitName  bool
+	StartTime        time.Time
+	EndTime          time.Time
 	IsGroup          bool
 	DurationTotal    time.Duration
 	DurationRequest  *time.Duration
@@ -50,13 +52,14 @@ type RunStatStep struct {
 	BytesReceivedMin null.Int
 	BytesReceivedMax null.Int
 	Codes            map[string]int
+	Executions       []*StepExecution
 }
 
 type RunStats struct {
-	startTime           time.Time
 	mutexStepExecutions sync.Mutex
 	stepExecutions      []*StepExecution
 
+	StartTime          time.Time
 	TotalDuration      time.Duration
 	CountStepsTotal    int64
 	CountStepsSkipped  int64
@@ -66,11 +69,11 @@ type RunStats struct {
 }
 
 func (r *RunStats) SetStart() {
-	r.startTime = time.Now()
+	r.StartTime = time.Now()
 }
 
 func (r *RunStats) SetEnd() {
-	r.TotalDuration = time.Since(r.startTime)
+	r.TotalDuration = time.Since(r.StartTime)
 }
 
 func (r *RunStats) AddStepExecution(stepExecution *StepExecution) {
@@ -112,6 +115,8 @@ func (r *RunStats) Aggregate() {
 
 		r.CountStepsTotal++
 		r.Steps[stepExecution.Name].CountTotal++
+
+		r.Steps[stepExecution.Name].Executions = append(r.Steps[stepExecution.Name].Executions, stepExecution)
 
 		switch stepExecution.Status {
 		case StepExecutionStatusSuccess:

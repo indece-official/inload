@@ -184,6 +184,7 @@ func (l *LoadTestStep) Execute(path []string, vm *otto.Otto, runStats *stats.Run
 		IsGroup:         isGroup,
 		Status:          stats.StepExecutionStatusSuccess,
 		HasExplicitName: l.Name.Valid,
+		StartTime:       start,
 		Name:            name,
 		DurationTotal:   duration,
 	}

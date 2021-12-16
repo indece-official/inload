@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -15,6 +16,20 @@ import (
 type Report struct {
 }
 
+type ReportDataJSONStepExecution struct {
+	StartTime     int64 `json:"start_time"`
+	DurationTotal int64 `json:"duration_total"`
+}
+
+type ReportDataJSONStep struct {
+	Name       string                         `json:"name"`
+	Executions []*ReportDataJSONStepExecution `json:"executions"`
+}
+
+type ReportDataJSON struct {
+	Steps []*ReportDataJSONStep `json:"steps"`
+}
+
 type ReportData struct {
 	Datetime           string
 	DurationTotal      time.Duration
@@ -23,6 +38,12 @@ type ReportData struct {
 	CountStepsSucceded int64
 	CountStepsFailed   int64
 	Steps              []*ReportDataStep
+	ExecutionsJSON     string
+}
+
+type ReportDataStepCode struct {
+	Code  string
+	Count int
 }
 
 type ReportDataStep struct {
@@ -32,6 +53,7 @@ type ReportDataStep struct {
 	CountSucceded    int64
 	CountFailed      int64
 	Errors           []string
+	Codes            []*ReportDataStepCode
 	DurationAvg      time.Duration
 	DurationMin      time.Duration
 	DurationMax      time.Duration
@@ -61,13 +83,16 @@ func (r *Report) Generate(runStats *stats.RunStats) ([]byte, error) {
 	}
 
 	data := &ReportData{}
-	data.Datetime = time.Now().Format("2006-01-02 15:04:05")
+	data.Datetime = runStats.StartTime.Format("2006-01-02 15:04:05")
 	data.DurationTotal = runStats.TotalDuration
 	data.CountStepsTotal = runStats.CountStepsTotal
 	data.CountStepsSkipped = runStats.CountStepsSkipped
 	data.CountStepsSucceded = runStats.CountStepsSucceded
 	data.CountStepsFailed = runStats.CountStepsFailed
 	data.Steps = []*ReportDataStep{}
+
+	dataJSON := &ReportDataJSON{}
+	dataJSON.Steps = []*ReportDataJSONStep{}
 
 	for name, runStatStep := range runStats.Steps {
 		if runStatStep.IsGroup || !runStatStep.HasExplicitName {
@@ -91,8 +116,48 @@ func (r *Report) Generate(runStats *stats.RunStats) ([]byte, error) {
 		step.BytesReceivedMin = runStatStep.BytesReceivedMin
 		step.BytesReceivedMax = runStatStep.BytesReceivedMax
 
+		step.Codes = []*ReportDataStepCode{}
+		for code, count := range runStatStep.Codes {
+			stepCode := &ReportDataStepCode{}
+
+			stepCode.Code = code
+			stepCode.Count = count
+
+			step.Codes = append(step.Codes, stepCode)
+		}
+
+		mapErrors := map[string]bool{}
+		for _, err := range runStatStep.Errors {
+			mapErrors[err.Error()] = true
+		}
+
+		step.Errors = []string{}
+		for errorStr := range mapErrors {
+			step.Errors = append(step.Errors, errorStr)
+		}
+
+		dataJSONStep := &ReportDataJSONStep{}
+		dataJSONStep.Name = name
+
+		for _, runStatExecution := range runStatStep.Executions {
+			dataJSONExecution := &ReportDataJSONStepExecution{}
+
+			dataJSONExecution.StartTime = runStatExecution.StartTime.Sub(runStats.StartTime).Milliseconds()
+			dataJSONExecution.DurationTotal = runStatExecution.DurationTotal.Milliseconds()
+
+			dataJSONStep.Executions = append(dataJSONStep.Executions, dataJSONExecution)
+		}
+
+		dataJSON.Steps = append(dataJSON.Steps, dataJSONStep)
 		data.Steps = append(data.Steps, step)
 	}
+
+	executionsJSON, err := json.Marshal(dataJSON)
+	if err != nil {
+		return nil, fmt.Errorf("can't excode json for report template: %s", err)
+	}
+
+	data.ExecutionsJSON = string(executionsJSON)
 
 	var buf bytes.Buffer
 
