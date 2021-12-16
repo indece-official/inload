@@ -1,0 +1,35 @@
+version: v1
+tests:
+- name: 'Example load test 01'
+  vars:
+    stage: 'dev'
+    endpoint: 'http://localhost:8080'
+    pages: [1001, 1002, 2003]
+  steps:
+  - threads:
+      count: 3
+      steps:
+      - loop:
+          count: 10
+          steps:
+            - log:
+                msg: 'Before request'
+            - exec:
+                script: > 
+                  i = Math.round(Math.random() * (pages.length - 1));
+                  page = pages[i];
+            - name: 'GET http://locahost:8080/'
+              http:
+                url: 'http://localhost:8080/'
+                method: 'GET'
+                timeout: '10s'
+                request_body:
+                  expr: 'JSON.stringify({page: page})'
+                headers:
+                - name: 'Authorization'
+                  value: 'Bearer testestest'
+                assertions:
+                  - statuscode: 200
+                  - expr: 'response.header["Content-Type"] === "text/html; charset=UTF-8"'
+            - log:
+                expr: '"Response: " + JSON.stringify(response)'
